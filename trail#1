@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Scanner</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    button {
+      padding: 15px 25px;
+      margin: 10px;
+      font-size: 18px;
+      border-radius: 10px;
+      border: none;
+      background-color: #4CAF50;
+      color: white;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 20px;
+    }
+    #output {
+      margin-top: 20px;
+      font-size: 18px;
+      background-color: #f0f0f0;
+      padding: 10px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Smart Scanner</h1>
+  <p>Select an option:</p>
+
+  <button onclick="startBarcodeScanner()">📷 Scan Barcode</button>
+  <button onclick="scanNFC()">📡 Scan NFC Tag</button>
+
+  <div id="scanner" style="display: none;">
+    <video id="preview"></video>
+  </div>
+
+  <div id="output"></div>
+
+  <!-- Include barcode scanning library -->
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+
+  <script>
+    const output = document.getElementById('output');
+    const previewElem = document.getElementById('preview');
+
+    // ZXing barcode scanner
+    async function startBarcodeScanner() {
+      output.innerText = "Starting barcode scanner...";
+      document.getElementById('scanner').style.display = 'block';
+
+      const codeReader = new ZXing.BrowserMultiFormatReader();
+      try {
+        const videoInputDevices = await codeReader.listVideoInputDevices();
+        await codeReader.decodeFromVideoDevice(videoInputDevices[0].deviceId, 'preview', (result, err) => {
+          if (result) {
+            output.innerText = `📦 Barcode Value: ${result.text}`;
+            codeReader.reset();
+          }
+        });
+      } catch (e) {
+        output.innerText = `Error: ${e.message}`;
+      }
+    }
+
+    // NFC Scanning
+    async function scanNFC() {
+      output.innerText = "Waiting for NFC tag...";
+      if ('NDEFReader' in window) {
+        const reader = new NDEFReader();
+        try {
+          await reader.scan();
+          reader.onreading = (event) => {
+            let tagInfo = '';
+            for (const record of event.message.records) {
+              const textDecoder = new TextDecoder(record.encoding || "utf-8");
+              tagInfo += `📡 NFC Data: ${textDecoder.decode(record.data)}\n`;
+            }
+            output.innerText = tagInfo || "No data found on tag.";
+          };
+        } catch (error) {
+          output.innerText = "NFC Scan failed: " + error;
+        }
+      } else {
+        output.innerText = "NFC not supported on this device/browser.";
+      }
+    }
+  </script>
+</body>
+</html>
