@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Scanner</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+      background-color: #f9f9f9;
+    }
+    button {
+      padding: 15px 25px;
+      margin: 10px;
+      font-size: 18px;
+      border-radius: 10px;
+      border: none;
+      background-color: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 20px;
+      border: 2px solid #ccc;
+      border-radius: 10px;
+    }
+    #output {
+      margin-top: 20px;
+      font-size: 18px;
+      background-color: #ffffff;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>📱 Smart Scanner</h1>
+  <p>Choose a method to scan:</p>
+
+  <button onclick="startBarcodeScanner()">📷 Scan Barcode</button>
+  <button onclick="scanNFC()">📡 Scan NFC Tag</button>
+
+  <div id="scanner" style="display: none;">
+    <video id="preview"></video>
+  </div>
+
+  <div id="output">Output will appear here.</div>
+
+  <!-- ZXing library for barcode scanning -->
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+
+  <script>
+    const output = document.getElementById('output');
+    const previewElem = document.getElementById('preview');
+
+    async function startBarcodeScanner() {
+      output.innerText = "Requesting camera permission...";
+      document.getElementById('scanner').style.display = 'block';
+
+      try {
+        // Ask for camera permission explicitly
+        await navigator.mediaDevices.getUserMedia({ video: true });
+
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        const videoInputDevices = await codeReader.listVideoInputDevices();
+
+        if (videoInputDevices.length === 0) {
+          output.innerText = "❌ No camera devices found.";
+          return;
+        }
+
+        output.innerText = "📷 Scanning... Point your camera at a barcode.";
+        await codeReader.decodeFromVideoDevice(videoInputDevices[0].deviceId, 'preview', (result, err) => {
+          if (result) {
+            output.innerText = `✅ Barcode Value: ${result.text}`;
+            codeReader.reset();
+          } else if (err && !(err instanceof ZXing.NotFoundException)) {
+            output.innerText = `⚠️ Error: ${err}`;
+          }
+        });
+
+      } catch (e) {
+        output.innerText = `🚫 Camera access denied or error: ${e.message}`;
+      }
+    }
+
+    async function scanNFC() {
+      output.innerText = "📡 Waiting for NFC tag...";
+
+      if ('NDEFReader' in window) {
+        const reader = new NDEFReader();
+        try {
+          await reader.scan();
+          reader.onreading = (event) => {
+            let tagInfo = '';
+            for (const record of event.message.records) {
+              const textDecoder = new TextDecoder(record.encoding || "utf-8");
+              tagInfo += `📡 NFC Data: ${textDecoder.decode(record.data)}\n`;
+            }
+            output.innerText = tagInfo || "📡 NFC tag has no data.";
+          };
+        } catch (error) {
+          output.innerText = `❌ NFC Scan failed: ${error.message}`;
+        }
+      } else {
+        output.innerText = "❌ NFC not supported on this device/browser.";
+      }
+    }
+  </script>
+</body>
+</html>
