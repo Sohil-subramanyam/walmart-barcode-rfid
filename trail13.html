@@ -237,7 +237,7 @@
 
         // --- Handle Image File Upload ---
         imageUpload.addEventListener('change', function(event) {
-            const file = event.target.files; // Get the first file
+            const file = event.target.files[0]; // Get the first file
             if (file) {
                 if (isScanning) {
                     Quagga.stop(); // Stop live scanning if active
@@ -278,7 +278,7 @@
             }
         });
 
-        // --- API Integration (Conceptual & Security Warning) ---
+        // --- API Integration (Using RapidAPI Barcode Lookup) ---
         async function getProductData(barcode) {
             productInfo.innerHTML = '<h2>Product Details</h2><p>Loading product information for barcode: <strong>' + barcode + '</strong>...</p>';
             statusMessage.textContent = '';
@@ -290,31 +290,36 @@
             // would then make the secure API call to the barcode lookup service using your API key.
             // Example: fetch('/api/lookup-barcode', { method: 'POST', body: JSON.stringify({ barcode }) })
 
-            // Using Go-UPC as an example API (replace with your chosen API and secure your key!)
-            const API_URL = 'https://go-upc.com/api/v1/code/'; // [2]
-            const API_KEY = 'YOUR_GO_UPC_API_KEY_HERE'; // <<<--- REPLACE THIS WITH YOUR ACTUAL API KEY FROM GO-UPC.COM! [3, 2, 4, 5]
+            const RAPIDAPI_API_URL = 'https://barcodelookup.p.rapidapi.com/v3/products';
+            const RAPIDAPI_HOST = 'barcodelookup.p.rapidapi.com';
+            const RAPIDAPI_KEY = 'f4a3f31e5dmshe9f27bd8f405764p12c247jsn9c8bee76ed2c'; // User provided key
 
-            if (API_KEY === 'YOUR_GO_UPC_API_KEY_HERE') {
-                productInfo.innerHTML = '<h2>Product Details</h2><p style="color: red;"><strong>API Key Not Configured!</strong> Please replace "YOUR_GO_UPC_API_KEY_HERE" with your actual API key from Go-UPC.com. For production, use a backend proxy for security.</p>';
-                statusMessage.textContent = 'Error: API Key missing or not configured securely.';
-                statusMessage.classList.add('error-message');
-                return;
+            if (RAPIDAPI_KEY === 'YOUR_RAPIDAPI_KEY_HERE' || RAPIDAPI_KEY === 'f4a3f31e5dmshe9f27bd8f405764p12c247jsn9c8bee76ed2c') {
+                // The user provided a key, but for a real app, it should be proxied.
+                // For this example, we'll use it directly as requested, but keep the warning.
+                statusMessage.textContent = 'Warning: API Key is directly in client-side code. For production, use a backend proxy for security.';
+                statusMessage.classList.add('warning-message');
             }
 
+
             try {
-                // This is a client-side example, which is INSECURE for production.
-                // It uses the Go-UPC API which supports a URL parameter for the key. [2]
-                const response = await fetch(`${API_URL}${barcode}?key=${API_KEY}`);
+                const response = await fetch(`${RAPIDAPI_API_URL}?barcode=${barcode}&formatted=y`, {
+                    method: 'GET',
+                    headers: {
+                        'X-RapidAPI-Key': RAPIDAPI_KEY,
+                        'X-RapidAPI-Host': RAPIDAPI_HOST
+                    }
+                });
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ message: 'No additional error info.' }));
                     let errorMessage = `Failed to retrieve product information. Status: ${response.status}.`;
                     if (response.status === 401) {
-                        errorMessage += ' Unauthorized: Your API key might be invalid or missing. Please check it.'; [2]
+                        errorMessage += ' Unauthorized: Your RapidAPI key might be invalid or missing, or you are not subscribed to the API.';
                     } else if (response.status === 404) {
-                        errorMessage += ' Not Found: No product information for this barcode in the database.'; [2]
+                        errorMessage += ' Not Found: No product information for this barcode in the database.';
                     } else if (response.status === 429) {
-                        errorMessage += ' Too Many Requests: You have exceeded your API plan quota or rate limit.'; [2]
+                        errorMessage += ' Too Many Requests: You have exceeded your RapidAPI plan quota or rate limit.';
                     } else {
                         errorMessage += ` Message: ${errorData.message |
 
@@ -326,69 +331,105 @@
                 const data = await response.json();
                 console.log("API Response:", data);
 
-                if (data.product) {
-                    const product = data.product;
-                    let specsHtml = '';
-                    if (product.specs && product.specs.length > 0) {
-                        specsHtml = '<p><strong>Specifications:</strong></p><ul>';
-                        product.specs.forEach(spec => {
-                            // Ensure spec is an array with at least two elements
-                            if (Array.isArray(spec) && spec.length >= 2) {
-                                specsHtml += `<li><strong>${spec}:</strong> ${spec[1]}</li>`;
-                            }
+                // RapidAPI Barcode Lookup returns an array of products, even for single barcode lookup
+                const product = data.products && data.products.length > 0? data.products[0] : null;
+
+                if (product) {
+                    let detailsHtml = '';
+
+                    // Common fields from Barcode Lookup API documentation (Source 22)
+                    const fields = [
+                        { label: 'Title', key: 'title' },
+                        { label: 'Brand', key: 'brand' },
+                        { label: 'Manufacturer', key: 'manufacturer' },
+                        { label: 'Category', key: 'category' },
+                        { label: 'Description', key: 'description' },
+                        { label: 'MPN', key: 'mpn' },
+                        { label: 'Model', key: 'model' },
+                        { label: 'ASIN', key: 'asin' },
+                        { label: 'Ingredients', key: 'ingredients' },
+                        { label: 'Nutrition Facts', key: 'nutrition_facts' },
+                        { label: 'Color', key: 'color' },
+                        { label: 'Gender', key: 'gender' },
+                        { label: 'Material', key: 'material' },
+                        { label: 'Pattern', key: 'pattern' },
+                        { label: 'Energy Efficiency Rating', key: 'energy_efficiency_rating' },
+                        { label: 'Multipack', key: 'multipack' },
+                        { label: 'Size', key: 'size' },
+                        { label: 'Length', key: 'length' },
+                        { label: 'Width', key: 'width' },
+                        { label: 'Height', key: 'height' },
+                        { label: 'Weight', key: 'weight' },
+                        { label: 'Release Date', key: 'release_date' },
+                        { label: 'Contributors', key: 'contributors' }
+                    ];
+
+                    fields.forEach(field => {
+                        if (product[field.key]) {
+                            detailsHtml += `<p><strong>${field.label}:</strong> ${product[field.key]}</p>`;
+                        }
+                    });
+
+                    // Handle Features (array)
+                    if (product.features && product.features.length > 0) {
+                        detailsHtml += `<p><strong>Features:</strong></p><ul>`;
+                        product.features.forEach(feature => {
+                            detailsHtml += `<li>${feature}</li>`;
                         });
-                        specsHtml += '</ul>';
+                        detailsHtml += `</ul>`;
                     }
+
+                    // Handle Images (array of URLs)
+                    let imagesHtml = '';
+                    if (product.images && product.images.length > 0) {
+                        imagesHtml = '<p><strong>Images:</strong></p>';
+                        product.images.forEach(imageUrl => {
+                            imagesHtml += `<img src="${imageUrl}" alt="Product Image" style="max-width: 150px; height: auto; margin: 5px; border-radius: 4px;">`;
+                        });
+                    }
+
+                    // Handle Stores (array of objects)
+                    let storesHtml = '';
+                    if (product.stores && product.stores.length > 0) {
+                        storesHtml = '<p><strong>Available at:</strong></p><ul>';
+                        product.stores.forEach(store => {
+                            storesHtml += `<li>${store.store_name}: ${store.price} ${store.currency} (<a href="${store.link}" target="_blank">Link</a>)</li>`;
+                        });
+                        storesHtml += '</ul>';
+                    }
+
+                    // Handle Reviews (array of objects)
+                    let reviewsHtml = '';
+                    if (product.reviews && product.reviews.length > 0) {
+                        reviewsHtml = '<p><strong>Reviews:</strong></p>';
+                        product.reviews.forEach(review => {
+                            reviewsHtml += `
+                                <div style="border-bottom: 1px dashed #ccc; padding-bottom: 10px; margin-bottom: 10px;">
+                                    <p><strong>${review.title |
+
+| 'No Title'}</strong> (Rating: ${review.rating |
+
+| 'N/A'}/5)</p>
+                                    <p>${review.review |
+
+| 'No Review Text'}</p>
+                                    <p><small>By ${review.name |
+
+| 'Anonymous'} on ${review.date |
+
+| 'N/A'}</small></p>
+                                </div>
+                            `;
+                        });
+                    }
+
 
                     productInfo.innerHTML = `
                         <h2>Product Details</h2>
-                        <p><strong>Barcode:</strong> ${data.code} (${data.codeType})</p>
-                        <p><strong>Name:</strong> ${product.name |
-
-| 'N/A'}</p>
-                        <p><strong>Brand:</strong> ${product.brand |
-
-| 'N/A'}</p>
-                        <p><strong>Category:</strong> ${product.category |
-
-| 'N/A'}</p>
-                        <p><strong>Description:</strong> ${product.description |
-
-| 'N/A'}</p>
-                        ${product.ingredients? `<p><strong>Ingredients:</strong> ${product.ingredients}</p>` : ''}
-                        ${specsHtml}
-                        ${product.imageUrl? `<p><img src="${product.imageUrl}" alt="${product.name}" style="max-width: 150px; height: auto; border-radius: 4px;"></p>` : ''}
+                        <p><strong>Barcode:</strong> ${product.barcode}</p>
+                        ${detailsHtml}
+                        ${imagesHtml}
+                        ${storesHtml}
+                        ${reviewsHtml}
                     `;
-                    statusMessage.textContent = 'Product information retrieved successfully!';
-                    statusMessage.classList.add('success-message');
-                } else {
-                    productInfo.innerHTML = '<h2>Product Details</h2><p>No product information found for this barcode.</p>';
-                    statusMessage.textContent = 'No product found for the entered barcode in the database.';
-                    statusMessage.classList.add('warning-message');
-                }
-
-            } catch (error) {
-                console.error('Error fetching product data:', error);
-                productInfo.innerHTML = '<h2>Product Details</h2><p style="color: red;">Failed to retrieve product information. Please check the barcode or try again.</p>';
-                statusMessage.textContent = `Error: ${error.message}`;
-                statusMessage.classList.add('error-message');
-            }
-        }
-
-        // --- Event Listeners ---
-        lookupButton.addEventListener('click', () => {
-            const barcode = barcodeInput.value.trim();
-            if (barcode) {
-                getProductData(barcode);
-            } else {
-                statusMessage.textContent = 'Please enter a barcode or use the camera/image upload.';
-                statusMessage.classList.add('warning-message');
-            }
-        });
-
-        // Start camera automatically on page load
-        window.onload = startCameraScanning;
-
-    </script>
-</body>
-</html>
+                    statusMessage.textContent = 'Produ
