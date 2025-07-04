@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Product Lookup</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+      .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #0056b3;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+      .scanner-area {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        #interactive.viewport {
+            position: relative;
+            width: 100%;
+            height: 200px; /* Adjust as needed */
+            overflow: hidden;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            background-color: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #interactive.viewport video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Ensures video fills the area */
+        }
+        canvas {
+            display: none; /* Used for processing, not directly displayed */
+        }
+      .input-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"], input[type="file"] {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #productInfo {
+            margin-top: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            min-height: 100px;
+        }
+        #productInfo h2 {
+            color: #007bff;
+            margin-top: 0;
+        }
+        #statusMessage {
+            color: #555;
+            margin-top: 10px;
+            text-align: center;
+            font-weight: bold;
+        }
+      .error-message {
+            color: red;
+        }
+      .success-message {
+            color: green;
+        }
+      .warning-message {
+            color: orange;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Barcode Product Information</h1>
+
+        <div class="scanner-area">
+            <div id="interactive" class="viewport">
+                </div>
+            <p id="cameraStatus">Initializing camera...</p>
+            <p>Point your camera at a barcode or use the options below.</p>
+        </div>
+
+        <div class="input-section">
+            <label for="imageUpload">Upload Barcode Image:</label>
+            <input type="file" id="imageUpload" accept="image/*">
+            <p style="text-align: center;">OR</p>
+            <input type="text" id="barcodeInput" placeholder="Enter barcode (UPC, EAN, ISBN) manually">
+            <button id="lookupButton">Lookup Product</button>
+        </div>
+
+        <p id="statusMessage"></p>
+
+        <div id="productInfo">
+            <h2>Product Details</h2>
+            <p>Information will appear here after a successful lookup.</p>
+        </div>
+    </div>
+
+    <script>
+        const interactive = document.getElementById('interactive');
+        const barcodeInput = document.getElementById('barcodeInput');
+        const lookupButton = document.getElementById('lookupButton');
+        const imageUpload = document.getElementById('imageUpload');
+        const productInfo = document.getElementById('productInfo');
+        const statusMessage = document.getElementById('statusMessage');
+        const cameraStatus = document.getElementById('cameraStatus');
+
+        let isScanning = false;
+
+        // --- QuaggaJS Initialization for Live Stream ---
+        function startCameraScanning() {
+            if (isScanning) return; // Prevent multiple camera starts
+
+            cameraStatus.textContent = 'Requesting camera permission...';
+            cameraStatus.classList.remove('success-message', 'error-message', 'warning-message');
+            statusMessage.textContent = '';
+            statusMessage.classList.remove('success-message', 'error-message', 'warning-message');
+            productInfo.innerHTML = '<h2>Product Details</h2><p>Information will appear here after a successful lookup.</p>';
+
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: interactive, // Or '#interactive'
+                    constraints: {
+                        width: { min: 640 },
+                        height: { min: 480 },
+                        facingMode: "environment", // Use 'user' for front camera, 'environment' for back camera
+                        aspectRatio: { min: 1, max: 2 }
+                    }
+                },
+                decoder: {
+                    readers: ["ean_reader", "upc_reader", "code_128_reader", "code_39_reader", "ean_8_reader", "upc_e_reader", "codabar_reader", "i2of5_reader", "standard_2_of_5_reader", "code_93_reader"],
+                    debug: {
+                        drawBoundingBox: true, // Draw box around detected barcode
+                        showFrequency: false,
+                        drawScanline: true, // Draw scanline
+                        showPattern: false
+                    }
+                },
+                locate: true // Enable barcode localization
+            }, function(err) {
+                if (err) {
+                    console.error("Error initializing QuaggaJS:", err);
+                    let errorMessage = 'Error: Could not start camera. ';
+                    if (err.name === 'NotAllowedError') {
+                        errorMessage += 'Permission denied. Please allow camera access in your browser settings.';
+                    } else if (window.location.protocol!== 'https:') {
+                        errorMessage += 'Camera access requires a secure connection (HTTPS). Please serve this page over HTTPS or a local server.';
+                    } else {
+                        errorMessage += err.message;
+                    }
+                    cameraStatus.textContent = errorMessage;
+                    cameraStatus.classList.add('error-message');
+                    isScanning = false;
+                    return;
+                }
+                console.log("QuaggaJS initialization finished. Ready to start.");
+                Quagga.start();
+                isScanning = true;
+                cameraStatus.textContent = 'Camera active. Point at a barcode.';
+                cameraStatus.classList.add('success-message');
+            });
+
+            Quagga.onDetected(function(result) {
+                if (result && result.codeResult && result.codeResult.code) {
+                    const barcode = result.codeResult.code;
+                    console.log("Barcode detected:", barcode);
+                    barcodeInput.value = barcode; // Populate manual input field
+                    getProductData(barcode);
+                    Quagga.stop(); // Stop scanning after a successful detection
+                    isScanning = false;
+                    cameraStatus.textContent = 'Scan complete.';
+                    cameraStatus.classList.remove('success-message');
+                }
+            });
+
+            Quagga.onProcessed(function(result) {
+                // Optional: You can use this for visual feedback during scanning
+                // For example, drawing the bounding box on the video stream
+                var drawingCtx = Quagga.canvas.ctx.overlay;
+                var drawingCanvas = Quagga.canvas.dom.overlay;
+
+                if (result) {
+                    if (result.boxes) {
+                        drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.width), parseInt(drawingCanvas.height));
+                        result.boxes.filter(function (box) {
+                            return box!== result.box;
+                        }).forEach(function (box) {
+                            Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
+                        });
+                    }
+                    if (result.box) {
+                        Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "#00F", lineWidth: 2});
+                    }
+                    if (result.codeResult && result.codeResult.code) {
+                        Quagga.ImageDebug.drawPath(result.line, {x: 'x', y: 'y'}, drawingCtx, {color: "red", lineWidth: 3});
+                    }
+                }
+            });
+        }
+
+        // --- Handle Image File Upload ---
+        imageUpload.addEventListener('change', function(event) {
+            const file = event.target.files; // Get the first file
+            if (file) {
+                if (isScanning) {
+                    Quagga.stop(); // Stop live scanning if active
+                    isScanning = false;
+                    cameraStatus.textContent = 'Camera stopped for image upload.';
+                    cameraStatus.classList.remove('success-message');
+                }
+
+                statusMessage.textContent = 'Processing image...';
+                statusMessage.classList.remove('error-message', 'success-message', 'warning-message');
+                productInfo.innerHTML = '<h2>Product Details</h2><p>Decoding barcode from image...</p>';
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    Quagga.decodeSingle({
+                        src: e.target.result,
+                        numOfWorkers: 0, // Important for browser environment
+                        decoder: {
+                            readers: ["ean_reader", "upc_reader", "code_128_reader", "code_39_reader", "ean_8_reader", "upc_e_reader", "codabar_reader", "i2of5_reader", "standard_2_of_5_reader", "code_93_reader"]
+                        }
+                    }, function(result) {
+                        if (result && result.codeResult && result.codeResult.code) {
+                            const barcode = result.codeResult.code;
+                            console.log("Barcode decoded from image:", barcode);
+                            barcodeInput.value = barcode;
+                            getProductData(barcode);
+                            statusMessage.textContent = 'Barcode detected from image!';
+                            statusMessage.classList.add('success-message');
+                        } else {
+                            console.log("No barcode detected in image.");
+                            statusMessage.textContent = 'No barcode found in the uploaded image. Please try another image or enter manually.';
+                            statusMessage.classList.add('error-message');
+                            productInfo.innerHTML = '<h2>Product Details</h2><p>No barcode found in the uploaded image.</p>';
+                        }
+                    });
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // --- API Integration (Conceptual & Security Warning) ---
+        async function getProductData(barcode) {
+            productInfo.innerHTML = '<h2>Product Details</h2><p>Loading product information for barcode: <strong>' + barcode + '</strong>...</p>';
+            statusMessage.textContent = '';
+            statusMessage.classList.remove('error-message', 'success-message', 'warning-message');
+
+            // IMPORTANT SECURITY NOTE:
+            // For a production application, you MUST NOT expose your API key directly in client-side code.
+            // Instead, you would send the barcode to your own backend server, and your backend
+            // would then make the secure API call to the barcode lookup service using your API key.
+            // Example: fetch('/api/lookup-barcode', { method: 'POST', body: JSON.stringify({ barcode }) })
+
+            // Using Go-UPC as an example API (replace with your chosen API and secure your key!)
+            const API_URL = 'https://go-upc.com/api/v1/code/'; // [2]
+            const API_KEY = 'YOUR_GO_UPC_API_KEY_HERE'; // <<<--- REPLACE THIS WITH YOUR ACTUAL API KEY! [2]
+
+            if (API_KEY === 'YOUR_GO_UPC_API_KEY_HERE') {
+                productInfo.innerHTML = '<h2>Product Details</h2><p style="color: red;"><strong>API Key Not Configured!</strong> Please replace "YOUR_GO_UPC_API_KEY_HERE" with your actual API key from Go-UPC.com. For production, use a backend proxy for security.</p>';
+                statusMessage.textContent = 'Error: API Key missing or not configured securely.';
+                statusMessage.classList.add('error-message');
+                return;
+            }
+
+            try {
+                // This is a client-side example, which is INSECURE for production.
+                // It uses the Go-UPC API which supports a URL parameter for the key. [2]
+                const response = await fetch(`${API_URL}${barcode}?key=${API_KEY}`);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'No additional error info.' }));
+                    let errorMessage = `Failed to retrieve product information. Status: ${response.status}.`;
+                    if (response.status === 401) {
+                        errorMessage += ' Unauthorized: Your API key might be invalid or missing. Please check it.';
+                    } else if (response.status === 404) {
+                        errorMessage += ' Not Found: No product information for this barcode in the database.';
+                    } else if (response.status === 429) {
+                        errorMessage += ' Too Many Requests: You have exceeded your API plan quota or rate limit.';
+                    } else {
+                        errorMessage += ` Message: ${errorData.message |
+
+| 'Unknown error.'}`;
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                console.log("API Response:", data);
+
+                if (data.product) {
+                    const product = data.product;
+                    let specsHtml = '';
+                    if (product.specs && product.specs.length > 0) {
+                        specsHtml = '<p><strong>Specifications:</strong></p><ul>';
+                        product.specs.forEach(spec => {
+                            if (Array.isArray(spec) && spec.length >= 2) {
+                                specsHtml += `<li>${spec}: ${spec[1]}</li>`; // Corrected indexing for specs
+                            }
+                        });
+                        specsHtml += '</ul>';
+                    }
+
+                    productInfo.innerHTML = `
+                        <h2>Product Details</h2>
+                        <p><strong>Barcode:</strong> ${data.code} (${data.codeType})</p>
+                        <p><strong>Name:</strong> ${product.name |
+
+| 'N/A'}</p>
+                        <p><strong>Brand:</strong> ${product.brand |
+
+| 'N/A'}</p>
+                        <p><strong>Category:</strong> ${product.category |
+
+| 'N/A'}</p>
+                        <p><strong>Description:</strong> ${product.description |
+
+| 'N/A'}</p>
+                        ${product.ingredients? `<p><strong>Ingredients:</strong> ${product.ingredients}</p>` : ''}
+                        ${specsHtml}
+                        ${product.imageUrl? `<p><img src="${product.imageUrl}" alt="${product.name}" style="max-width: 150px; height: auto; border-radius: 4px;"></p>` : ''}
+                    `;
+                    statusMessage.textContent = 'Product information retrieved successfully!';
+                    statusMessage.classList.add('success-message');
+                } else {
+                    productInfo.innerHTML = '<h2>Product Details</h2><p>No product information found for this barcode.</p>';
+                    statusMessage.textContent = 'No product found for the entered barcode in the database.';
+                    statusMessage.classList.add('warning-message');
+                }
+
+            } catch (error) {
+                console.error('Error fetching product data:', error);
+                productInfo.innerHTML = '<h2>Product Details</h2><p style="color: red;">Failed to retrieve product information. Please check the barcode or try again.</p>';
+                statusMessage.textContent = `Error: ${error.message}`;
+                statusMessage.classList.add('error-message');
+            }
+        }
+
+        // --- Event Listeners ---
+        lookupButton.addEventListener('click', () => {
+            const barcode = barcodeInput.value.trim();
+            if (barcode) {
+                getProductData(barcode);
+            } else {
+                statusMessage.textContent = 'Please enter a barcode or use the camera/image upload.';
+                statusMessage.classList.add('warning-message');
+            }
+        });
+
+        // Start camera automatically on page load
+        window.onload = startCameraScanning;
+
+    </script>
+</body>
+</html>
