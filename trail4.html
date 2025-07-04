@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Scanner App</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the Inter font and general layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Full viewport height */
+            margin: 0;
+            padding: 1rem; /* Padding around the content */
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff; /* White background for the container */
+            border-radius: 1.5rem; /* More rounded corners */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Soft shadow */
+            padding: 2rem;
+            width: 100%;
+            max-width: 400px; /* Max width for mobile-first design */
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem; /* Space between sections */
+        }
+        .button-group {
+            display: flex;
+            flex-direction: column; /* Stack buttons on small screens */
+            gap: 1rem; /* Space between buttons */
+        }
+        @media (min-width: 640px) { /* Tailwind's 'sm' breakpoint */
+            .button-group {
+                flex-direction: row; /* Row for larger screens */
+                justify-content: center;
+            }
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem; /* Rounded corners for buttons */
+            font-weight: 600; /* Semi-bold text */
+            transition: all 0.2s ease-in-out; /* Smooth transitions */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Button shadow */
+        }
+        button:hover {
+            transform: translateY(-2px); /* Slight lift on hover */
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15); /* Enhanced shadow on hover */
+        }
+        button:active {
+            transform: translateY(0); /* Press effect */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .btn-barcode {
+            background-image: linear-gradient(to right, #6366f1, #8b5cf6); /* Purple gradient */
+            color: white;
+        }
+        .btn-nfc {
+            background-image: linear-gradient(to right, #22d3ee, #0ea5e9); /* Cyan to blue gradient */
+            color: white;
+        }
+        #output {
+            min-height: 80px; /* Ensure output div has a minimum height */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            word-break: break-all; /* Break long words */
+            text-align: center;
+            font-size: 1.125rem; /* Larger font size */
+            font-weight: 500; /* Medium font weight */
+            color: #334155; /* Darker text color */
+            background-color: #f8fafc; /* Lighter background for output */
+            border: 1px solid #e2e8f0; /* Light border */
+            border-radius: 0.75rem;
+            padding: 1rem;
+            overflow-wrap: break-word; /* Ensure long text wraps */
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            padding-top: 75%; /* 4:3 aspect ratio (height is 75% of width) */
+            background-color: #000;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            display: none; /* Hidden by default */
+        }
+        #video-container.active {
+            display: block; /* Show when active */
+        }
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Cover the container, cropping if necessary */
+            transform: scaleX(-1); /* Mirror the camera feed for a more natural feel */
+        }
+        canvas {
+            display: none; /* Hidden, used for barcode processing */
+        }
+        #message {
+            color: #ef4444; /* Red for error messages */
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800">Mobile Scanner</h1>
+
+        <div class="button-group">
+            <button id="scanBarcodeBtn" class="btn-barcode">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Scan Barcode
+            </button>
+            <button id="scanNFCBtn" class="btn-nfc">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9.228a4.5 4.5 0 017.542 0M10.15 11.15a1.5 1.5 0 012.7 0M12 18h.01M12 12h.01M21 12c0 4.418-4.03 8-9 8s-9-3.582-9-8 4.03-8 9-8 9 3.582 9 8z" />
+                </svg>
+                Scan NFC
+            </button>
+        </div>
+
+        <div id="video-container">
+            <video id="video" playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div id="output" class="text-gray-700 font-medium text-lg p-4 border border-gray-200 rounded-xl bg-gray-50 min-h-[80px] flex items-center justify-center">
+            Scan results will appear here.
+        </div>
+
+        <div id="message" class="text-red-500 font-semibold"></div>
+    </div>
+
+    <!-- ZXing Library for barcode scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
+    <script>
+        // Get references to DOM elements
+        const scanBarcodeBtn = document.getElementById('scanBarcodeBtn');
+        const scanNFCBtn = document.getElementById('scanNFCBtn');
+        const videoContainer = document.getElementById('video-container');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const outputDiv = document.getElementById('output');
+        const messageDiv = document.getElementById('message');
+        const ctx = canvas.getContext('2d');
+
+        let codeReader; // ZXing BarcodeReader instance
+        let currentStream; // To hold the camera stream
+
+        /**
+         * Displays a message to the user.
+         * @param {string} msg - The message to display.
+         * @param {string} type - The type of message ('error' or 'info').
+         */
+        function showMessage(msg, type = 'info') {
+            messageDiv.textContent = msg;
+            messageDiv.className = type === 'error' ? 'text-red-500 font-semibold' : 'text-gray-600 font-medium';
+        }
+
+        /**
+         * Clears the output and message areas.
+         */
+        function clearOutput() {
+            outputDiv.textContent = 'Scan results will appear here.';
+            outputDiv.classList.remove('text-green-600', 'text-red-600'); // Remove previous styling
+            outputDiv.classList.add('text-gray-700'); // Reset to default
+            showMessage(''); // Clear message
+        }
+
+        /**
+         * Stops the camera stream if active.
+         */
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                videoContainer.classList.remove('active');
+                videoContainer.style.display = 'none'; // Ensure it's hidden
+            }
+            if (codeReader) {
+                codeReader.reset(); // Reset ZXing reader
+            }
+        }
+
+        /**
+         * Starts the barcode scanning process.
+         */
+        async function startBarcodeScan() {
+            clearOutput();
+            stopCamera(); // Ensure any existing camera stream is stopped
+
+            // Show video container
+            videoContainer.classList.add('active');
+            videoContainer.style.display = 'block';
+
+            try {
+                // Request camera permission and stream
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                currentStream = stream;
+                video.srcObject = stream;
+                await video.play(); // Start playing the video stream
+
+                // Initialize ZXing BarcodeReader
+                if (!codeReader) {
+                    codeReader = new ZXing.BrowserMultiFormatReader();
+                }
+
+                showMessage('Scanning for barcode...');
+
+                // Decode continuously from the video stream
+                // CORRECTED: The second argument should be the callback function, not an element ID.
+                codeReader.decodeFromVideo(video, (result, err) => {
+                    if (result) {
+                        // Barcode found
+                        outputDiv.textContent = `Barcode: ${result.getText()}`;
+                        outputDiv.classList.remove('text-gray-700');
+                        outputDiv.classList.add('text-green-600');
+                        showMessage('Barcode scanned successfully!', 'info');
+                        stopCamera(); // Stop camera after successful scan
+                    }
+                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                        // Handle other errors, but ignore NotFoundException (no barcode found yet)
+                        console.error(err);
+                        showMessage(`Error scanning barcode: ${err.message}`, 'error');
+                        stopCamera();
+                    }
+                });
+
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    showMessage('Camera access denied. Please grant permission in your browser settings.', 'error');
+                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                    showMessage('No camera found. Please ensure you have a camera connected and enabled.', 'error');
+                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                    showMessage('Camera is already in use or not accessible. Please close other apps using the camera.', 'error');
+                } else {
+                    showMessage(`Could not start barcode scan: ${err.message}`, 'error');
+                }
+                stopCamera(); // Ensure camera is stopped on error
+            }
+        }
+
+        /**
+         * Starts the NFC scanning process.
+         */
+        async function startNFCScan() {
+            clearOutput();
+            stopCamera(); // Ensure camera is stopped if it was active
+
+            // Check if Web NFC API is supported
+            if ('NDEFReader' in window) {
+                showMessage('Tap an NFC tag to scan...');
+                try {
+                    const ndef = new NDEFReader();
+
+                    // Start scanning for NFC tags
+                    await ndef.scan();
+
+                    // Event listener for when an NFC tag is read
+                    ndef.onreading = event => {
+                        const message = event.message;
+                        let nfcData = 'NFC Tag Scanned!\n';
+
+                        // Iterate through NDEF records in the message
+                        for (const record of message.records) {
+                            nfcData += `\nRecord Type: ${record.recordType}\n`;
+                            nfcData += `Media Type: ${record.mediaType || 'N/A'}\n`;
+                            nfcData += `ID: ${record.id || 'N/A'}\n`;
+
+                            // Decode payload based on record type
+                            if (record.recordType === 'text') {
+                                const textDecoder = new TextDecoder(record.encoding);
+                                const text = textDecoder.decode(record.data);
+                                nfcData += `Text: ${text}\n`;
+                            } else if (record.recordType === 'url') {
+                                const url = new TextDecoder().decode(record.data);
+                                nfcData += `URL: ${url}\n`;
+                            } else if (record.mediaType === 'application/json') {
+                                try {
+                                    const json = JSON.parse(new TextDecoder().decode(record.data));
+                                    nfcData += `JSON Data: ${JSON.stringify(json, null, 2)}\n`;
+                                } catch (e) {
+                                    nfcData += `Raw Data (JSON parse error): ${new TextDecoder().decode(record.data)}\n`;
+                                }
+                            } else {
+                                // For other record types, display raw data as string
+                                nfcData += `Data: ${new TextDecoder().decode(record.data)}\n`;
+                            }
+                        }
+                        outputDiv.textContent = nfcData;
+                        outputDiv.classList.remove('text-gray-700');
+                        outputDiv.classList.add('text-green-600');
+                        showMessage('NFC tag read successfully!', 'info');
+                    };
+
+                    // Event listener for errors during NFC scanning
+                    ndef.onerror = err => {
+                        console.error('NFC error:', err);
+                        showMessage(`NFC scanning failed: ${err.message}. Make sure NFC is enabled and try again.`, 'error');
+                    };
+
+                } catch (err) {
+                    console.error('Error starting NFC scan:', err);
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        showMessage('NFC access denied. Please ensure your device supports NFC and grant permission if prompted.', 'error');
+                    } else if (err.name === 'NotSupportedError') {
+                        showMessage('NFC is not supported on this device or browser.', 'error');
+                    } else {
+                        showMessage(`Could not start NFC scan: ${err.message}`, 'error');
+                    }
+                }
+            } else {
+                showMessage('Web NFC API is not supported in this browser. Please use Chrome on Android.', 'error');
+                outputDiv.textContent = 'NFC not supported.';
+                outputDiv.classList.remove('text-gray-700');
+                outputDiv.classList.add('text-red-600');
+            }
+        }
+
+        // Add event listeners to buttons
+        scanBarcodeBtn.addEventListener('click', startBarcodeScan);
+        scanNFCBtn.addEventListener('click', startNFCScan);
+
+        // Initial message on load
+        window.onload = () => {
+            showMessage('Welcome! Choose a scanning method.');
+        };
+    </script>
+</body>
+</html>
