@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Barcode Scanner</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white p-8 rounded-xl shadow-xl w-full max-w-lg">
+    <h1 class="text-2xl font-bold mb-4 text-center">📦 Smart Barcode Scanner</h1>
+
+    <!-- Upload Image -->
+    <div class="mb-4">
+      <label class="block font-semibold mb-2">Upload Image with Barcode</label>
+      <input type="file" accept="image/*" id="uploadInput" class="block w-full" />
+    </div>
+
+    <div class="mb-4">
+      <label class="block font-semibold mb-2">Detected Barcode / UPC</label>
+      <input id="barcodeInput" class="border border-gray-300 p-2 w-full rounded" placeholder="Auto-filled barcode..." />
+    </div>
+
+    <button id="searchBtn" class="bg-blue-600 text-white w-full py-2 rounded hover:bg-blue-700">🔍 Search Product</button>
+
+    <div id="result" class="mt-6 text-sm"></div>
+
+    <!-- Hidden Canvas for Processing Image -->
+    <canvas id="previewCanvas" class="hidden"></canvas>
+  </div>
+
+  <script>
+    const uploadInput = document.getElementById('uploadInput');
+    const barcodeInput = document.getElementById('barcodeInput');
+    const resultDiv = document.getElementById('result');
+    const canvas = document.getElementById('previewCanvas');
+    const ctx = canvas.getContext('2d');
+
+    uploadInput.addEventListener('change', handleImageUpload);
+
+    function handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const img = new Image();
+        img.onload = () => {
+          const angles = [0, 90, 180, 270];
+          let detected = false;
+
+          const tryDecode = (angleIndex = 0) => {
+            if (angleIndex >= angles.length) {
+              if (!detected) {
+                resultDiv.innerHTML = `<div class='text-red-600 font-medium'>⚠️ Could not detect barcode in any rotation.</div>`;
+              }
+              return;
+            }
+
+            const angle = angles[angleIndex];
+
+            if (angle === 90 || angle === 270) {
+              canvas.width = img.height;
+              canvas.height = img.width;
+            } else {
+              canvas.width = img.width;
+              canvas.height = img.height;
+            }
+
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((angle * Math.PI) / 180);
+            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+            ctx.restore();
+
+            const imageDataURL = canvas.toDataURL("image/png");
+
+            Quagga.decodeSingle({
+              src: imageDataURL,
+              numOfWorkers: 0,
+              locate: true,
+              inputStream: { size: 800 },
+              decoder: {
+                readers: ["upc_reader", "ean_reader", "code_128_reader"]
+              }
+            }, function (result) {
+              if (result && result.codeResult) {
+                barcodeInput.value = result.codeResult.code;
+                resultDiv.innerHTML = `<div class='text-green-600 font-medium'>✅ Detected: ${result.codeResult.code}</div>`;
+                detected = true;
+              } else {
+                tryDecode(angleIndex + 1); // Try next rotation
+              }
+            });
+          };
+
+          tryDecode(); // Start with first rotation
+        };
+
+        img.src = e.target.result;
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    // Fetch product info from RapidAPI
+    document.getElementById('searchBtn').addEventListener('click', async () => {
+      const barcode = barcodeInput.value.trim();
+      if (!barcode) return alert('Enter or upload a barcode');
+
+      resultDiv.innerHTML = '<div class="text-blue-600">Searching...</div>';
+
+      try {
+        const response = await fetch(`https://barcodes-lookup.p.rapidapi.com/?barcode=${barcode}`, {
+          method: 'GET',
+          headers: {
+            'X-Rapidapi-Key': 'f4a3f31e5dmshe9f27bd8f405764p12c247jsn9c8bee76ed2c',
+            'X-Rapidapi-Host': 'barcodes-lookup.p.rapidapi.com'
+          }
+        });
+
+        const data = await response.json();
+        const p = data.product;
+        if (!p) throw new Error();
+
+        resultDiv.innerHTML = `
+          <div class='border p-4 rounded bg-gray-50 mt-4'>
+            <img src="${p.images?.[0] || ''}" class="w-full h-48 object-contain mb-2" />
+            <p><strong>🛒 Title:</strong> ${p.title}</p>
+            <p><strong>🏭 Manufacturer:</strong> ${p.manufacturer || 'N/A'}</p>
+            <p><strong>📄 Description:</strong> ${p.description || 'N/A'}</p>
+            <p><strong>🛍️ Price:</strong> ${p.online_stores?.[0]?.price || 'N/A'} at 
+              <a href="${p.online_stores?.[0]?.url}" target="_blank" class="text-blue-600 underline">Store</a>
+            </p>
+          </div>
+        `;
+      } catch (err) {
+        resultDiv.innerHTML = `<div class='text-red-600'>❌ Product not found. Try another barcode.</div>`;
+      }
+    });
+  </script>
+</body>
+</html>
