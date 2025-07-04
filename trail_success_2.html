@@ -50,16 +50,21 @@
       reader.onload = function (e) {
         const img = new Image();
         img.onload = () => {
+          const zoomFactor = 1.5;
           const angles = [0, 90, 180, 270];
           let detected = false;
 
-          // First try original image
-          canvas.width = img.width;
-          canvas.height = img.height;
+          // Draw magnified original image
+          canvas.width = img.width * zoomFactor;
+          canvas.height = img.height * zoomFactor;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.save();
+          ctx.scale(zoomFactor, zoomFactor);
           ctx.drawImage(img, 0, 0);
+          ctx.restore();
           const originalData = canvas.toDataURL('image/png');
 
+          // Try unenhanced image first
           Quagga.decodeSingle({
             src: originalData,
             numOfWorkers: 0,
@@ -78,7 +83,7 @@
               resultDiv.innerHTML = `<div class='text-green-600 font-medium'>✅ Detected: ${result.codeResult.code}</div>`;
               detected = true;
             } else {
-              tryEnhancedDecode(0); // If failed, try rotated + enhanced
+              tryEnhancedDecode(0);
             }
           });
 
@@ -91,23 +96,22 @@
             }
 
             const angle = angles[angleIndex];
-            if (angle === 90 || angle === 270) {
-              canvas.width = img.height;
-              canvas.height = img.width;
-            } else {
-              canvas.width = img.width;
-              canvas.height = img.height;
-            }
+            const scaledWidth = (angle === 90 || angle === 270) ? img.height * zoomFactor : img.width * zoomFactor;
+            const scaledHeight = (angle === 90 || angle === 270) ? img.width * zoomFactor : img.height * zoomFactor;
 
+            canvas.width = scaledWidth;
+            canvas.height = scaledHeight;
             ctx.save();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.rotate((angle * Math.PI) / 180);
+            ctx.scale(zoomFactor, zoomFactor);
             ctx.drawImage(img, -img.width / 2, -img.height / 2);
             ctx.restore();
 
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
+
             for (let i = 0; i < data.length; i += 4) {
               let r = data[i], g = data[i + 1], b = data[i + 2];
               let gray = 0.3 * r + 0.59 * g + 0.11 * b;
@@ -115,8 +119,8 @@
               gray = Math.min(255, Math.max(0, gray));
               data[i] = data[i + 1] = data[i + 2] = gray;
             }
-            ctx.putImageData(imageData, 0, 0);
 
+            ctx.putImageData(imageData, 0, 0);
             const enhancedData = canvas.toDataURL('image/png');
 
             Quagga.decodeSingle({
@@ -147,7 +151,7 @@
       reader.readAsDataURL(file);
     }
 
-    // Product Lookup via API
+    // Product Lookup + Fallback Search
     document.getElementById('searchBtn').addEventListener('click', async () => {
       const barcode = barcodeInput.value.trim();
       if (!barcode) return alert('Enter or upload a barcode');
@@ -179,7 +183,16 @@
           </div>
         `;
       } catch (err) {
-        resultDiv.innerHTML = `<div class='text-red-600'>❌ Product not found. Try another barcode.</div>`;
+        resultDiv.innerHTML = `
+          <div class='text-red-600 font-semibold'>❌ Product not found via API.</div>
+          <div class="mt-4 text-sm">
+            <p class="mb-2">🔍 Try searching manually:</p>
+            <ul class="list-disc list-inside space-y-1">
+              <li><a href="https://www.google.com/search?q=${barcode}" target="_blank" class="text-blue-600 underline">Search on Google</a></li>
+              <li><a href="https://www.barcodelookup.com/${barcode}" target="_blank" class="text-blue-600 underline">Search on BarcodeLookup</a></li>
+            </ul>
+          </div>
+        `;
       }
     });
   </script>
