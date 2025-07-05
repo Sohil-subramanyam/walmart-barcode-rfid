@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Barcode Scanner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100" x-data="scannerApp">
+  <section class="min-h-screen flex items-center justify-center bg-blue-50">
+    <div class="w-full max-w-2xl bg-white p-6 rounded shadow relative">
+      <h2 class="text-2xl font-bold mb-4">📦 Smart Barcode Scanner</h2>
+      <input type="file" accept="image/*" class="block mb-3" @change="handleImageUpload($event)" />
+      <input x-model="barcode" placeholder="Detected barcode..." class="w-full p-2 mb-3 border rounded" />
+      <button @click="searchProduct" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">🔍 Search Product</button>
+      <button @click="startCameraScanner" class="mt-2 w-full bg-purple-600 text-white py-2 rounded hover:bg-purple-700">📷 Start Live Camera Scan</button>
+      <div id="liveScanner" class="mt-4 w-full h-64 rounded overflow-hidden border border-gray-300" x-show="liveScanning"></div>
+      <div class="mt-4 text-center text-gray-700" x-text="scanMessage"></div>
+
+      <!-- Product Info -->
+      <template x-if="product">
+        <div class="mt-6 border p-4 rounded bg-green-50">
+          <img :src="product.image" class="w-32 h-32 object-contain mx-auto mb-3" onerror="this.src='https://via.placeholder.com/150';" />
+          <h3 class="text-xl font-bold" x-text="product.title"></h3>
+          <p class="text-gray-600 text-sm mt-1 mb-2" x-text="product.description"></p>
+          <p><strong>Brand:</strong> <span x-text="product.brand"></span></p>
+          <p><strong>Price:</strong> ₹<span x-text="product.price"></span></p>
+          <a :href="product.link" target="_blank" class="text-blue-600 underline">View Store</a>
+          <div class="mt-4">
+            <button @click="addToCart()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">➕ Add to Cart</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- Cart Button -->
+      <div class="absolute top-4 right-4">
+        <button @click="page = 'cart'" class="relative">
+          🛒
+          <span class="absolute -top-2 -right-2 text-xs bg-red-600 text-white rounded-full px-2" x-text="cart.length"></span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Cart Page -->
+  <template x-if="page === 'cart'">
+    <div class="fixed inset-0 bg-white p-6 overflow-y-auto z-50">
+      <h2 class="text-2xl font-bold mb-4">🛒 Your Cart</h2>
+      <template x-if="cart.length === 0">
+        <p>No items added yet.</p>
+      </template>
+      <template x-for="(item, index) in cart" :key="index">
+        <div class="flex items-center gap-4 border p-4 mb-2 rounded">
+          <img :src="item.image" class="w-16 h-16 object-contain rounded" onerror="this.src='https://via.placeholder.com/100';" />
+          <div class="flex-1">
+            <h3 class="font-semibold" x-text="item.name"></h3>
+            <p class="text-sm">Price: ₹<span x-text="item.price"></span></p>
+            <div class="flex items-center gap-2 mt-2">
+              <button @click="item.qty = Math.max(1, item.qty - 1)" class="px-2 bg-gray-200">-</button>
+              <span x-text="item.qty"></span>
+              <button @click="item.qty++" class="px-2 bg-gray-200">+</button>
+              <button @click="cart.splice(index, 1)" class="text-red-600 ml-2">Remove</button>
+            </div>
+          </div>
+        </div>
+      </template>
+      <div class="mt-4 text-right font-semibold">
+        Total Items: <span x-text="cart.reduce((a, b) => a + b.qty, 0)"></span><br>
+        Total Price: ₹<span x-text="cart.reduce((sum, item) => sum + (item.price * item.qty), 0)"></span>
+      </div>
+      <button @click="page = 'scanner'" class="mt-4 bg-blue-600 text-white py-2 px-4 rounded">🔙 Back to Scanner</button>
+    </div>
+  </template>
+
+  <canvas id="previewCanvas" class="hidden"></canvas>
+
+  <!-- App Script -->
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('scannerApp', () => ({
+        page: 'scanner',
+        barcode: '',
+        scanMessage: '',
+        product: null,
+        cart: [],
+        liveScanning: false,
+
+        mockDB: {
+          "8901030954115": {
+            title: "6 X 150ml Simple Kind to Skin Face Wash",
+            brand: "Simple",
+            description: "Soap-free, vegan face wash removes dirt and moisturizes your skin.",
+            image: "https://m.media-amazon.com/images/I/61aL-xa6OzL._SX522_.jpg",
+            price: 489,
+            link: "https://www.amazon.in/"
+          }
+        },
+
+        handleImageUpload(event) {
+          const canvas = document.getElementById('previewCanvas');
+          const ctx = canvas.getContext('2d');
+          const file = event.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const tryRotation = (angle) => {
+                canvas.width = angle % 180 === 0 ? img.width : img.height;
+                canvas.height = angle % 180 === 0 ? img.height : img.width;
+                ctx.save();
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate((angle * Math.PI) / 180);
+                ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                ctx.restore();
+                return canvas.toDataURL();
+              };
+
+              const angles = [0, 90, 180, 270];
+              let found = false;
+
+              (async () => {
+                for (let angle of angles) {
+                  await new Promise(resolve => {
+                    Quagga.decodeSingle({
+                      src: tryRotation(angle),
+                      numOfWorkers: 0,
+                      decoder: {
+                        readers: ["ean_reader", "upc_reader", "code_128_reader"]
+                      },
+                      locate: true
+                    }, (result) => {
+                      if (result && result.codeResult) {
+                        this.barcode = result.codeResult.code;
+                        this.scanMessage = `✅ Barcode Detected: ${result.codeResult.code}`;
+                        found = true;
+                      }
+                      resolve();
+                    });
+                  });
+                  if (found) break;
+                }
+                if (!found) this.scanMessage = '❌ Could not detect barcode.';
+              })();
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        },
+
+        searchProduct() {
+          if (!this.barcode) {
+            this.scanMessage = '⚠️ Please enter or scan a barcode.';
+            return;
+          }
+          if (this.mockDB[this.barcode]) {
+            this.product = this.mockDB[this.barcode];
+            this.scanMessage = '';
+          } else {
+            this.product = null;
+            this.scanMessage = '❌ Product not found in database.';
+          }
+        },
+
+        addToCart() {
+          if (this.product) {
+            const existing = this.cart.find(item => item.name === this.product.title);
+            if (existing) {
+              existing.qty++;
+            } else {
+              this.cart.push({ name: this.product.title, qty: 1, image: this.product.image, price: this.product.price });
+            }
+            this.product = null;
+            this.barcode = '';
+          }
+        },
+
+        startCameraScanner() {
+          this.liveScanning = true;
+          this.scanMessage = "📷 Starting camera...";
+          Quagga.init({
+            inputStream: {
+              name: "Live",
+              type: "LiveStream",
+              target: document.querySelector('#liveScanner'),
+              constraints: { facingMode: "environment" }
+            },
+            decoder: {
+              readers: ["ean_reader", "upc_reader", "code_128_reader"]
+            },
+            locate: true
+          }, (err) => {
+            if (err) {
+              console.error(err);
+              this.scanMessage = "❌ Camera access error.";
+              return;
+            }
+            Quagga.start();
+            this.scanMessage = "🔎 Scanning...";
+          });
+
+          Quagga.onDetected((result) => {
+            const code = result.codeResult.code;
+            Quagga.stop();
+            this.liveScanning = false;
+            this.barcode = code;
+            this.scanMessage = `✅ Live Scan: ${code}`;
+          });
+        }
+      }));
+    });
+  </script>
+</body>
+</html>
